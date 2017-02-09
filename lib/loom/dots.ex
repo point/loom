@@ -128,7 +128,7 @@ defmodule Loom.Dots do
   end
   defp compact_reduce([{actor, clock}=dot|cloud], ctx, cloud_acc) do
     case {ctx[actor], clock} do
-      {nil, 1} ->
+      {nil, _} when clock >= 1 ->
         # We can merge nil with 1 in the cloud
         compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
       {nil, _} ->
