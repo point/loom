@@ -33,7 +33,8 @@ defmodule Loom.Dots do
   @spec dotin(t, dot) :: boolean
   def dotin(%Dots{ctx: ctx, cloud: cloud}, {actor,clock}=dot) do
     # If this exists in the dot, and is greater than the value *or* is in the cloud
-    (ctx[actor]||0) >= clock or Enum.any?(cloud, &(&1==dot))
+    #(ctx[actor]||0) >= clock or Enum.any?(cloud, &(&1==dot))
+    Enum.any?(cloud, &(&1==dot))
   end
 
   @doc """
