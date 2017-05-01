@@ -14,18 +14,21 @@ defmodule Loom.Dots do
   @opaque t :: %Dots{
     dots: %{dot => value},
     ctx: %{actor => clock},
-    cloud: [dot]
+    cloud: [dot],
+    initial_counter: integer
   }
 
   defstruct dots: %{}, # A map of dots (version-vector pairs) to values
             ctx: %{},  # Current counter values for actors used in the dots
-            cloud: []  # A set of dots that we've seen but haven't been merged.
+            cloud: [],  # A set of dots that we've seen but haven't been merged.
+            initial_counter: 0
 
   @doc """
   Create a new Dots manager
   """
   @spec new() :: t
   def new, do: %Dots{}
+  def new(initial_counter: initial_counter), do: %Dots{initial_counter: initial_counter}
 
   @doc """
   Checks for a dot's membership
@@ -66,12 +69,13 @@ defmodule Loom.Dots do
   Adds and associates a value with a new dot for an actor.
   """
   @spec add({t, t}, actor, value) :: {t, t}
-  def add({%Dots{dots: d, ctx: ctx}=dots, delta_dots}, actor, value) do
-    clock = Dict.get(ctx, actor, 0) + 1 # What's the value of our clock?
+  def add({%Dots{dots: d, ctx: ctx, initial_counter: initial_counter}=dots, delta_dots}, actor, value) do
+    clock = max(Dict.get(ctx, actor, 0), initial_counter) + 1 # What's the value of our clock?
     dot = {actor, clock}
     new_dots = %Dots{dots|
       dots: Dict.put(d, dot, value), # Add the value to the dot values
-      ctx: Dict.put(ctx, actor, clock) # Add the actor/clock to the context
+      ctx: Dict.put(ctx, actor, clock), # Add the actor/clock to the context
+      initial_counter: clock
     }
     # A new changeset
     new_delta = %Dots{dots: Dict.put(%{}, dot, value), cloud: [dot]}
@@ -80,11 +84,24 @@ defmodule Loom.Dots do
     {new_dots, new_delta}
   end
 
+  def init({%Dots{dots: d, ctx: ctx, initial_counter: initial_counter}=dots, delta_dots}, actor, value) do
+    clock =Dict.get(ctx, actor, 0) + 1 # What's the value of our clock?
+    dot = {actor, clock}
+    new_dots = %Dots{dots|
+      dots: Dict.put(d, dot, value), # Add the value to the dot values
+      ctx: Dict.put(ctx, actor, clock), # Add the actor/clock to the context
+      initial_counter: initial_counter
+    }
+    # A new changeset
+    new_delta = delta_dots
+    {new_dots, new_delta}
+  end
+
   @doc """
   Removes a value from the set
   """
   @spec remove({t, t}, value) :: {t, t}
-  def remove({%Dots{dots: d}=dots, delta_dots}, pred) when is_function(pred) do
+  def remove({%Dots{dots: d, initial_counter: initial_counter}=dots, delta_dots}, pred) when is_function(pred) do
     {new_d, delta_cloud} = Enum.reduce(d, {%{}, []}, fn ({dot, v}, {d, cloud}) ->
       if pred.(v) do
         # Don't reinsert dot/value, add dot to cloud for causation
@@ -95,7 +112,7 @@ defmodule Loom.Dots do
       end
     end)
     new_dots = %Dots{dots|dots: new_d}
-    new_delta = %Dots{cloud: delta_cloud}
+    new_delta = %Dots{cloud: delta_cloud, initial_counter: initial_counter}
              |> join(delta_dots)
              |> compact
     {new_dots, new_delta}
@@ -105,53 +122,56 @@ defmodule Loom.Dots do
   @doc """
   Removes all values from the set, but preserves the context.
   """
-  def empty({%Dots{cloud: cloud}=dots, delta_dots}) do
-    {%Dots{dots|dots: %{}}, join(%Dots{cloud: cloud}, delta_dots)}
+  def empty({%Dots{cloud: cloud, initial_counter: initial_counter}=dots, delta_dots}) do
+    {%Dots{dots|dots: %{}}, join(%Dots{cloud: cloud, initial_counter: initial_counter}, delta_dots)}
   end
 
   @doc """
   Removes all values from the set
   """
   @spec remove({t, t}) :: {t, t}
-  def remove({%Dots{dots: d}=dots, %Dots{}=delta}) do
+  def remove({%Dots{dots: d, initial_counter: initial_counter}=dots, %Dots{}=delta}) do
     new_dots = %Dots{dots|dots: %{}}
-    new_delta = join(delta, %Dots{cloud: Dict.keys(d)})
+    new_delta = join(delta, %Dots{cloud: Dict.keys(d), initial_counter: initial_counter})
     {new_dots, new_delta}
   end
 
-  defp do_compact(%Dots{ctx: ctx, cloud: c}=dots) do
-    {new_ctx, new_cloud} = compact_reduce(Enum.sort(c), ctx, [])
+  defp do_compact(%Dots{ctx: ctx, cloud: c, initial_counter: initial_counter}=dots) do
+    {new_ctx, new_cloud} = compact_reduce(Enum.sort(c), ctx, initial_counter + 1, [])
     %Dots{dots|ctx: new_ctx, cloud: new_cloud}
   end
 
-  defp compact_reduce([], ctx, cloud_acc) do
+  @spec compact_reduce([dot], %{actor => clock}, integer, [dot]) :: {%{actor => clock}, [dot]}
+  defp compact_reduce([], ctx, inc_initial_counter, cloud_acc) do
     {ctx, Enum.reverse(cloud_acc)}
   end
-  defp compact_reduce([{actor, clock}=dot|cloud], ctx, cloud_acc) do
+  defp compact_reduce([{actor, clock}=dot|cloud], ctx, inc_initial_counter, cloud_acc) do
     case {ctx[actor], clock} do
-      {nil, _} when clock >= 1 ->
+      {nil, ^inc_initial_counter} when clock >= 1 ->
+        compact_reduce(cloud, Dict.put(ctx, actor, clock), inc_initial_counter, cloud_acc)
+      {nil, clock} when clock >= inc_initial_counter ->
         # We can merge nil with 1 in the cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
+        compact_reduce(cloud, Dict.put(ctx, actor, clock), inc_initial_counter, cloud_acc)
       {nil, _} ->
         # Can't do anything with this
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
+        compact_reduce(cloud, ctx, inc_initial_counter, [dot|cloud_acc])
       {ctx_clock, _} when ctx_clock + 1 == clock ->
         # Add to context, delete from cloud
-        compact_reduce(cloud, Dict.put(ctx, actor, clock), cloud_acc)
+        compact_reduce(cloud, Dict.put(ctx, actor, clock), inc_initial_counter, cloud_acc)
       {ctx_clock, _} when ctx_clock >= clock -> # Dominates
         # Delete from cloud by not accumulating.
-        compact_reduce(cloud, ctx, cloud_acc)
+        compact_reduce(cloud, ctx, inc_initial_counter, cloud_acc)
       {_, _} ->
         # Can't do anything with this.
-        compact_reduce(cloud, ctx, [dot|cloud_acc])
+        compact_reduce(cloud, ctx, inc_initial_counter, [dot|cloud_acc])
     end
   end
 
-  defp do_join(%Dots{dots: d1, ctx: ctx1, cloud: c1}=dots1, %Dots{dots: d2, ctx: ctx2, cloud: c2}=dots2) do
+  defp do_join(%Dots{dots: d1, ctx: ctx1, cloud: c1, initial_counter: initial_counter}=dots1, %Dots{dots: d2, ctx: ctx2, cloud: c2}=dots2) do
     new_dots = do_join_dots(Enum.sort(d1), Enum.sort(d2), {dots1, dots2}, [])
     new_ctx = Dict.merge(ctx1, ctx2, fn (_, a, b) -> max(a, b) end)
     new_cloud = Enum.uniq(c1 ++ c2)
-    compact(%Dots{dots: new_dots, ctx: new_ctx, cloud: new_cloud})
+    compact(%Dots{dots: new_dots, ctx: new_ctx, cloud: new_cloud, initial_counter: initial_counter})
   end
 
   # This function requires the use of ORDERED lists.
