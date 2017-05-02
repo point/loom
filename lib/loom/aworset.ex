@@ -73,12 +73,15 @@ defmodule Loom.AWORSet do
     %Set{set|dots: new_dots, delta: new_delta_dots}
   end
 
-  def init(%Set{dots: d, delta: delta_dots}=set, actor, value) do 
-    if member?(set, value) do 
+  def init(%Set{dots: d, delta: delta_dots}=set, actor, value_) do 
+    if member?(set, value_) or 
+    (is_map(value_) and 
+     Map.get(value_, :id) and 
+     Enum.member?(Enum.map(value(set), &Map.get(&1, :id)), Map.get(value_, :id)))
+    do 
       set
     else
-      #with initial_counter <- d[:initial_counter],
-      with {new_dots, new_delta_dots} <- Dots.init({d, delta_dots}, actor, value),
+      with {new_dots, new_delta_dots} <- Dots.init({d, delta_dots}, actor, value_),
       do: %Set{set | dots: new_dots, delta: new_delta_dots}
     end
   end
