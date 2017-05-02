@@ -76,7 +76,7 @@ defmodule Loom.AWORSet do
   def init(%Set{dots: d, delta: delta_dots}=set, actor, value_) do 
     if member?(set, value_) or 
     (is_map(value_) and 
-     Map.get(value_, :id) and 
+     Map.has_key?(value_, :id) and 
      Enum.member?(Enum.map(value(set), &Map.get(&1, :id)), Map.get(value_, :id)))
     do 
       set
