@@ -75,7 +75,7 @@ defmodule Loom.Dots do
     new_dots = %Dots{dots|
       dots: Dict.put(d, dot, value), # Add the value to the dot values
       ctx: Dict.put(ctx, actor, clock), # Add the actor/clock to the context
-      initial_counter: clock
+      initial_counter: initial_counter
     }
     # A new changeset
     new_delta = %Dots{dots: Dict.put(%{}, dot, value), cloud: [dot]}
@@ -147,7 +147,7 @@ defmodule Loom.Dots do
   end
   defp compact_reduce([{actor, clock}=dot|cloud], ctx, inc_initial_counter, cloud_acc) do
     case {ctx[actor], clock} do
-      {nil, ^inc_initial_counter} when clock >= 1 ->
+      {nil, ^inc_initial_counter} ->
         compact_reduce(cloud, Dict.put(ctx, actor, clock), inc_initial_counter, cloud_acc)
       {nil, clock} when clock >= inc_initial_counter ->
         # We can merge nil with 1 in the cloud
@@ -167,12 +167,29 @@ defmodule Loom.Dots do
     end
   end
 
-  defp do_join(%Dots{dots: d1, ctx: ctx1, cloud: c1, initial_counter: initial_counter}=dots1, %Dots{dots: d2, ctx: ctx2, cloud: c2}=dots2) do
-    new_dots = do_join_dots(Enum.sort(d1), Enum.sort(d2), {dots1, dots2}, [])
+  #defp do_join(%Dots{dots: d1, ctx: ctx1, cloud: c1, initial_counter: initial_counter}=dots1, %Dots{dots: d2, ctx: ctx2, cloud: c2}=dots2) do
+    #new_dots = do_join_dots(Enum.sort(d1), Enum.sort(d2), {dots1, dots2}, [])
+    #new_ctx = Dict.merge(ctx1, ctx2, fn (_, a, b) -> max(a, b) end)
+    #new_cloud = Enum.uniq(c1 ++ c2)
+    #compact(%Dots{dots: new_dots, ctx: new_ctx, cloud: new_cloud, initial_counter: initial_counter})
+  #end
+  defp do_join(%Dots{dots: d1, ctx: ctx1, cloud: c1, initial_counter: initial_counter}=dots1, 
+   %Dots{dots: d2, ctx: ctx2, cloud: c2}=dots2) do 
+
+    keys1 = d1 |> Map.keys |> MapSet.new
+    keys2 = d2 |> Map.keys |> MapSet.new
+    keys1_with_ctx = for e <- Map.to_list(ctx1), into: keys1, do: e
+    keys2_with_ctx = for e <- Map.to_list(ctx2), into: keys2, do: e
+    keys_intersection = MapSet.intersection(keys1, keys2)
+    new_dots = %{} 
+                |> Enum.into(Map.take(d1, keys_intersection))
+                |> Enum.into(Map.drop(d1, keys2_with_ctx))
+                |> Enum.into(Map.drop(d2, keys1_with_ctx))
+
     new_ctx = Dict.merge(ctx1, ctx2, fn (_, a, b) -> max(a, b) end)
     new_cloud = Enum.uniq(c1 ++ c2)
     compact(%Dots{dots: new_dots, ctx: new_ctx, cloud: new_cloud, initial_counter: initial_counter})
-  end
+   end
 
   # This function requires the use of ORDERED lists.
   # If we run out of d2, also takes care of case when we run out of both same time.
