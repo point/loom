@@ -162,6 +162,14 @@ defmodule Loom.AWORSet do
     (for {_, v} <- Dots.dots(d), do: v) |> Enum.uniq
   end
 
+  def update(set, actor, old_value, new_value) do
+    if member?(set, old_value) do
+      set |> remove(old_value) |> add(actor, new_value)
+    else
+      set
+    end
+  end
+
 end
 
 defimpl Loom.CRDT, for: Loom.AWORSet do
