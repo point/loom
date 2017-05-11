@@ -101,8 +101,25 @@ defmodule Loom.Dots do
   Removes a value from the set
   """
   @spec remove({t, t}, value) :: {t, t}
-  def remove({%Dots{dots: d, initial_counter: initial_counter}=dots, delta_dots}, pred) when is_function(pred) do
-    {new_d, delta_cloud} = Enum.reduce(d, {%{}, []}, fn ({dot, v}, {d, cloud}) ->
+  #def remove({%Dots{dots: d, initial_counter: initial_counter}=dots, delta_dots}, pred) when is_function(pred) do
+    #{new_d, delta_cloud} = Enum.reduce(d, {%{}, []}, fn ({dot, v}, {d, cloud}) ->
+      #if pred.(v) do
+        ## Don't reinsert dot/value, add dot to cloud for causation
+        #{d, [dot|cloud]}
+      #else
+        ## Reinsert, don't worry about causation dot
+        #{Dict.put(d, dot, v), cloud}
+      #end
+    #end)
+    #new_dots = %Dots{dots|dots: new_d}
+    #new_delta = %Dots{cloud: delta_cloud, initial_counter: initial_counter}
+             #|> join(delta_dots)
+             #|> compact
+    #{new_dots, new_delta}
+  #end
+  def remove({%Dots{dots: d, initial_counter: initial_counter}=dots, 
+    %Dots{dots: delta_d}=delta_dots}, pred) when is_function(pred) do
+    {new_d, dots_cloud} = Enum.reduce(d, {%{}, []}, fn ({dot, v}, {d, cloud}) ->
       if pred.(v) do
         # Don't reinsert dot/value, add dot to cloud for causation
         {d, [dot|cloud]}
@@ -111,10 +128,17 @@ defmodule Loom.Dots do
         {Dict.put(d, dot, v), cloud}
       end
     end)
-    new_dots = %Dots{dots|dots: new_d}
-    new_delta = %Dots{cloud: delta_cloud, initial_counter: initial_counter}
-             |> join(delta_dots)
-             |> compact
+    {new_delta_d, delta_dots_cloud} = Enum.reduce(delta_d, {%{}, []}, fn ({dot, v}, {d, cloud}) ->
+      if pred.(v) do
+        # Don't reinsert dot/value, add dot to cloud for causation
+        {d, [dot|cloud]}
+      else
+        # Reinsert, don't worry about causation dot
+        {Dict.put(d, dot, v), cloud}
+      end
+    end)
+    new_dots = %Dots{dots|dots: new_d, cloud: dots_cloud, initial_counter: initial_counter} |> compact
+    new_delta = %Dots{delta_dots|dots: new_delta_d, cloud: dots_cloud ++ delta_dots_cloud, initial_counter: initial_counter} |> compact
     {new_dots, new_delta}
   end
   def remove(dots, value), do: remove(dots, &(&1==value))

@@ -133,8 +133,8 @@ defmodule Loom.AWORSet do
       [1,2]
   """
   @spec join(t,t) :: t
-  def join(%Set{dots: d1}=set, %Set{dots: d2}) do
-    %Set{set|dots: Dots.join(d1, d2)}
+  def join(%Set{dots: d1, delta: delta_dots}=set, %Set{dots: d2}) do
+    %Set{set|dots: Dots.join(d1, d2), delta: Dots.join(delta_dots, d2)}
   end
 
   @doc """
