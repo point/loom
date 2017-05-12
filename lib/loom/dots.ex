@@ -205,8 +205,8 @@ defmodule Loom.Dots do
     keys1_with_ctx = for e <- Map.to_list(ctx1), into: keys1, do: e
     keys2_with_ctx = for e <- Map.to_list(ctx2), into: keys2, do: e
     keys_intersection = MapSet.intersection(keys1, keys2)
-    keys1_ahead_ctx2 = keys1 |> Enum.filter(fn({actor, clock})-> clock >= Map.get(ctx2, actor, 0) end)
-    keys2_ahead_ctx1 = keys2 |> Enum.filter(fn({actor, clock})-> clock >= Map.get(ctx1, actor, 0) end)
+    keys1_ahead_ctx2 = keys1 |> Enum.filter(fn({actor, clock})-> clock > Map.get(ctx2, actor, 0) end)
+    keys2_ahead_ctx1 = keys2 |> Enum.filter(fn({actor, clock})-> clock > Map.get(ctx1, actor, 0) end)
     new_dots = %{} 
                 |> Enum.into(Map.take(d1, keys_intersection))
                 |> Enum.into(Map.take(d1, keys1_ahead_ctx2))
